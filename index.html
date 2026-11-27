@@ -54,6 +54,6 @@ window.open('https://wa.me/5581998398374?text='+encodeURIComponent(msg),'_blank'
 document.getElementById('reserve').classList.remove('show');
 const t=document.getElementById('toast');t.textContent='Solicitação registrada! Nossa equipe confirmará a disponibilidade e os próximos passos.';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),5000);f.reset();
 }catch(error){alert('Não foi possível registrar sua solicitação. Verifique a conexão e tente novamente. Detalhe: '+error.message)}
-finally{submitButton.disabled=false;submitButton.textContent='Enviar solicitação de reserva'}
+finally{submitButton.disabled=false;submitButton.textContent='Pagar Agora'}
 });document.getElementById('year').textContent=new Date().getFullYear();const today=new Date().toISOString().slice(0,10);document.getElementById('pickup').min=today;document.getElementById('dropoff').min=today;document.getElementById('reservePickup').min=today;document.getElementById('reserveDropoff').min=today;render();
 </script></body></html>
