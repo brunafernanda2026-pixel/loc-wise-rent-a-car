@@ -1,7 +1,9 @@
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Método não permitido." });
+    return res.status(405).json({
+      error: "Método não permitido."
+    });
   }
 
   const pagarmeKey = process.env.PAGARME_SECRET_KEY;
@@ -9,7 +11,9 @@ export default async function handler(req, res) {
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!pagarmeKey || !supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ error: "Configuração incompleta." });
+    return res.status(500).json({
+      error: "Configuração incompleta."
+    });
   }
 
   const precos = {
@@ -34,10 +38,16 @@ export default async function handler(req, res) {
     const diaria = precos[veiculo];
 
     if (
-      !diaria || !retirada || !devolucao ||
-      !nome?.trim() || !whatsapp?.trim() || !email?.trim()
+      !diaria ||
+      !retirada ||
+      !devolucao ||
+      !nome?.trim() ||
+      !whatsapp?.trim() ||
+      !email?.trim()
     ) {
-      return res.status(400).json({ error: "Preencha todos os dados." });
+      return res.status(400).json({
+        error: "Preencha todos os dados."
+      });
     }
 
     const inicio = new Date(`${retirada}T12:00:00Z`);
@@ -46,21 +56,26 @@ export default async function handler(req, res) {
 
     if (
       !Number.isInteger(dias) ||
-      dias < 1 || dias > 30 ||
+      dias < 1 ||
+      dias > 30 ||
       Number.isNaN(inicio.getTime()) ||
       retirada < new Date().toISOString().slice(0, 10)
     ) {
-      return res.status(400).json({ error: "Confira as datas." });
+      return res.status(400).json({
+        error: "Confira as datas."
+      });
     }
 
     const total = diaria * dias;
 
+    // Registrar reserva no Supabase
     const reservaResponse = await fetch(
       `${supabaseUrl}/rest/v1/reservations`,
       {
         method: "POST",
         headers: {
           "apikey": supabaseKey,
+          "Authorization": `Bearer ${supabaseKey}`,
           "Content-Type": "application/json",
           "Prefer": "return=representation"
         },
@@ -82,13 +97,18 @@ export default async function handler(req, res) {
 
     if (!reservaResponse.ok || !reservas[0]?.id) {
       console.error("Erro ao registrar reserva:", reservas);
+
       return res.status(502).json({
         error: "Não foi possível registrar a reserva."
       });
     }
 
     const reserva = reservas[0];
-    const auth = Buffer.from(`${pagarmeKey}:`).toString("base64");
+
+    // Criar checkout Pagar.me
+    const auth = Buffer
+      .from(`${pagarmeKey}:`)
+      .toString("base64");
 
     const pagamentoResponse = await fetch(
       "https://api.pagar.me/core/v5/paymentlinks",
@@ -110,15 +130,22 @@ export default async function handler(req, res) {
             pix_settings: {},
             credit_card_settings: {
               operation_type: "auth_and_capture",
-              installments: [{ number: 1, total }]
+              installments: [
+                {
+                  number: 1,
+                  total: total
+                }
+              ]
             }
           },
           cart_settings: {
-            items: [{
-              amount: total,
-              name: `${veiculo} - ${dias} diária(s)`,
-              default_quantity: 1
-            }]
+            items: [
+              {
+                amount: total,
+                name: `${veiculo} - ${dias} diária(s)`,
+                default_quantity: 1
+              }
+            ]
           }
         })
       }
@@ -126,19 +153,26 @@ export default async function handler(req, res) {
 
     const pagamento = await pagamentoResponse.json();
 
-    if (!pagamentoResponse.ok || !pagamento.url || !pagamento.id) {
+    if (
+      !pagamentoResponse.ok ||
+      !pagamento.url ||
+      !pagamento.id
+    ) {
       console.error("Erro ao criar checkout:", pagamento);
+
       return res.status(502).json({
         error: "Reserva registrada, mas não foi possível gerar o pagamento."
       });
     }
 
+    // Salvar identificação do pagamento no Supabase
     const updateResponse = await fetch(
       `${supabaseUrl}/rest/v1/reservations?id=eq.${reserva.id}`,
       {
         method: "PATCH",
         headers: {
           "apikey": supabaseKey,
+          "Authorization": `Bearer ${supabaseKey}`,
           "Content-Type": "application/json",
           "Prefer": "return=minimal"
         },
@@ -149,7 +183,11 @@ export default async function handler(req, res) {
     );
 
     if (!updateResponse.ok) {
-      console.error("Erro ao atualizar reserva:", await updateResponse.text());
+      console.error(
+        "Erro ao atualizar reserva:",
+        await updateResponse.text()
+      );
+
       return res.status(502).json({
         error: "Pagamento criado, mas não foi possível atualizar a reserva."
       });
@@ -162,6 +200,9 @@ export default async function handler(req, res) {
 
   } catch (erro) {
     console.error("Erro interno:", erro);
-    return res.status(500).json({ error: "Erro interno." });
+
+    return res.status(500).json({
+      error: "Erro interno."
+    });
   }
 }
