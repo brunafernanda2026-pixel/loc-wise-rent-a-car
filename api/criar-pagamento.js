@@ -1,4 +1,24 @@
 
+async function lerResposta(response) {
+  const texto = await response.text();
+
+  if (!texto) {
+    return { dados: null, texto: "" };
+  }
+
+  try {
+    return {
+      dados: JSON.parse(texto),
+      texto
+    };
+  } catch {
+    return {
+      dados: null,
+      texto
+    };
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
@@ -68,7 +88,7 @@ export default async function handler(req, res) {
 
     const total = diaria * dias;
 
-    // Registrar reserva no Supabase
+    // 1. Registrar reserva no Supabase
     const reservaResponse = await fetch(
       `${supabaseUrl}/rest/v1/reservations`,
       {
@@ -93,10 +113,18 @@ export default async function handler(req, res) {
       }
     );
 
-    const reservas = await reservaResponse.json();
+    const reservaResultado = await lerResposta(reservaResponse);
+    const reservas = reservaResultado.dados;
 
-    if (!reservaResponse.ok || !reservas[0]?.id) {
-      console.error("Erro ao registrar reserva:", reservas);
+    if (
+      !reservaResponse.ok ||
+      !Array.isArray(reservas) ||
+      !reservas[0]?.id
+    ) {
+      console.error("ERRO SUPABASE:", {
+        status: reservaResponse.status,
+        resposta: reservaResultado.texto
+      });
 
       return res.status(502).json({
         error: "Não foi possível registrar a reserva."
@@ -105,7 +133,7 @@ export default async function handler(req, res) {
 
     const reserva = reservas[0];
 
-    // Criar checkout Pagar.me
+    // 2. Criar checkout na Pagar.me
     const auth = Buffer
       .from(`${pagarmeKey}:`)
       .toString("base64");
@@ -151,21 +179,25 @@ export default async function handler(req, res) {
       }
     );
 
-    const pagamento = await pagamentoResponse.json();
+    const pagamentoResultado = await lerResposta(pagamentoResponse);
+    const pagamento = pagamentoResultado.dados;
 
     if (
       !pagamentoResponse.ok ||
-      !pagamento.url ||
-      !pagamento.id
+      !pagamento?.url ||
+      !pagamento?.id
     ) {
-      console.error("Erro ao criar checkout:", pagamento);
+      console.error("ERRO PAGAR.ME:", {
+        status: pagamentoResponse.status,
+        resposta: pagamentoResultado.texto
+      });
 
       return res.status(502).json({
-        error: "Reserva registrada, mas não foi possível gerar o pagamento."
+        error: "Não foi possível gerar o pagamento."
       });
     }
 
-    // Salvar identificação do pagamento no Supabase
+    // 3. Atualizar reserva com o identificador do pagamento
     const updateResponse = await fetch(
       `${supabaseUrl}/rest/v1/reservations?id=eq.${reserva.id}`,
       {
@@ -183,10 +215,12 @@ export default async function handler(req, res) {
     );
 
     if (!updateResponse.ok) {
-      console.error(
-        "Erro ao atualizar reserva:",
-        await updateResponse.text()
-      );
+      const erroUpdate = await updateResponse.text();
+
+      console.error("ERRO AO ATUALIZAR RESERVA:", {
+        status: updateResponse.status,
+        resposta: erroUpdate
+      });
 
       return res.status(502).json({
         error: "Pagamento criado, mas não foi possível atualizar a reserva."
@@ -199,7 +233,7 @@ export default async function handler(req, res) {
     });
 
   } catch (erro) {
-    console.error("Erro interno:", erro);
+    console.error("ERRO INTERNO:", erro);
 
     return res.status(500).json({
       error: "Erro interno."
